@@ -80,7 +80,10 @@ final class Requester
             try {
                 $resp = $this->transport->send($request, $timeout);
             } catch (TransportException $e) {
-                $failure = [$e->kind, $e->connectPhase, $e->getMessage()];
+                // Review 20b PHP-03: never the transport's free-text message (a custom transport could put a header
+                // or the body in it): a fixed text per kind, plus the curl error number when there is one.
+                $errno = $e->curlErrno;
+                $failure = [$e->kind, $e->connectPhase, $errno !== null && $errno > 0 ? ' (curl error ' . $errno . ')' : ''];
                 unset($e); // never chained: the transport exception's trace holds the request
             }
             if ($failure !== null) {
@@ -89,13 +92,13 @@ final class Requester
                     if ($deadlineBound || Core::pastDeadline($clock->monotonic(), $deadline)) {
                         throw new WaitTimeoutException(); // the wait deadline ended this request
                     }
-                    $err = new ApiTimeoutException('Request timed out (' . $detail . ')');
+                    $err = new ApiTimeoutException('Request timed out' . $detail);
                     $connectFailed = $connectPhase;
                 } elseif ($kind === TransportException::CONNECT) {
-                    $err = new ApiConnectionException('Connection failed (' . $detail . ')');
+                    $err = new ApiConnectionException('Connection failed' . $detail);
                     $connectFailed = true;
                 } else {
-                    $err = new ApiConnectionException('Network error (' . $detail . ')');
+                    $err = new ApiConnectionException('Network error' . $detail);
                 }
             } else {
                 // A request that ENDED after the wait deadline is a WaitTimeoutException (its result is dropped).
@@ -106,7 +109,10 @@ final class Requester
                 if ($rl !== null) {
                     $this->lastRateLimit = $rl;
                 }
-                if ($resp->status < 400) {
+                // Review 20b PHP-04: only 2xx is success. Redirects are never followed (the Authorization header must not
+                // reach another host), so a 3xx, a 1xx or a status 0 is an error, never a silent success (a void call
+                // such as delete() would look done). buildError() gives it the class of its status (ApiException).
+                if ($resp->status >= 200 && $resp->status < 300) {
                     return [Core::parseJson($resp), $resp];
                 }
                 $err = Core::buildError($resp);

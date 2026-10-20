@@ -20,7 +20,7 @@ use Tmailor\Model\Message;
 final class ConformanceTest extends TestCase
 {
     /** Number of scenario files shipped with this SDK version; fewer means fixtures were lost. */
-    public const EXPECTED_SCENARIOS = 80;
+    public const EXPECTED_SCENARIOS = 83; // Review 20b CONF: +me_missing_ip_allowlist_enforced, +redirect_3xx_is_error, +mailbox_delete_redirect_is_error
     public const DEFAULT_KEY = 'tmk_live_c0nf0rmance01_TESTSECRETdoNotUseAnywhere0000000000000';
     public const BASE_URL = 'https://open-api.test';
 
@@ -54,6 +54,8 @@ final class ConformanceTest extends TestCase
         'ConnectionError' => E\ApiConnectionException::class,
         'Timeout' => E\ApiTimeoutException::class,
         'WaitTimeout' => E\WaitTimeoutException::class,
+        // Review 20b CONF: any other HTTP error (for example a 3xx, never followed) is the plain API error class.
+        'APIError' => E\ApiException::class,
     ];
 
     /** Stable location: TMAILOR_CONFORMANCE_DIR, else <repo>/conformance/scenarios. Missing = failure, never a skip. */

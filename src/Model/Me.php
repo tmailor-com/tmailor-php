@@ -12,6 +12,8 @@ final class Me
     /**
      * @param list<string>         $ipAllowlist
      * @param list<Subscription>   $subscriptions
+     * @param bool                 $ipAllowlistEnforced Review 20b PHP-05 (spec 1.3.0): false when a paid plan lets
+     *                                                  this key call from any IP (the allowlist is not checked)
      * @param array<string, mixed> $raw
      */
     public function __construct(
@@ -21,6 +23,7 @@ final class Me
         public readonly Limits $limits,
         public readonly array $ipAllowlist,
         public readonly array $subscriptions,
+        public readonly bool $ipAllowlistEnforced,
         public readonly array $raw = [],
     ) {
     }
@@ -42,6 +45,7 @@ final class Me
             Limits::fromApi(S::reqObj($d, 'limits', '$')),
             S::reqStrList($d, 'ip_allowlist', '$'),
             $subs,
+            S::reqBool($d, 'ip_allowlist_enforced', '$'), // Review 20b PHP-05: required boolean in spec 1.3.0
             S::toArray($d),
         );
     }

@@ -154,9 +154,9 @@ final class Core
     {
         $status = $r->status;
         $err = [];
-        if ($r->body !== '') {
+        if ($r->body() !== '') {
             try {
-                $data = json_decode($r->body, false, 512, \JSON_THROW_ON_ERROR);
+                $data = json_decode($r->body(), false, 512, \JSON_THROW_ON_ERROR);
                 if ($data instanceof \stdClass && isset($data->error) && $data->error instanceof \stdClass) {
                     $err = Schema::toArray($data->error);
                 }
@@ -174,7 +174,7 @@ final class Core
         $requestId = isset($err['request_id']) && is_string($err['request_id']) ? $err['request_id'] : $r->header('X-Request-Id');
         $cls = ErrorMap::classFor($code, $status);
         $keep = [];
-        foreach ($r->headers as $k => $v) {
+        foreach ($r->headers() as $k => $v) {
             if (in_array($k, self::KEEP_ERROR_HEADERS, true)) {
                 $keep[$k] = $v;
             }
@@ -299,13 +299,13 @@ final class Core
     /** Decode a 2xx body. 204 or an empty body is null; anything that is not JSON raises InvalidResponseException. */
     public static function parseJson(Response $r): mixed
     {
-        if ($r->status === 204 || $r->body === '') {
+        if ($r->status === 204 || $r->body() === '') {
             return null;
         }
         $ok = true;
         $data = null;
         try {
-            $data = json_decode($r->body, false, 512, \JSON_THROW_ON_ERROR);
+            $data = json_decode($r->body(), false, 512, \JSON_THROW_ON_ERROR);
         } catch (\JsonException) {
             $ok = false;
         }

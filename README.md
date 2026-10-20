@@ -80,11 +80,19 @@ your own proxy) throws `Tmailor\Exception\BaseUrlException` (an `InvalidArgument
 `TMAILOR_BASE_URL`. Plain `http://` is accepted only for a loopback host (`127.0.0.1`, `::1`, `localhost`) during
 local development, and it also requires `allowUntrustedBaseUrl: true`.
 
-**Transport.** The default `CurlTransport` keeps one curl handle per client so connections are reused, verifies
-TLS certificates, never follows redirects, and allows only HTTP and HTTPS. Extra curl options (for example a proxy
-or a CA bundle) go to its constructor: `new CurlTransport([CURLOPT_PROXY => 'http://proxy:3128'])`. To use another
-HTTP stack, implement `TransportInterface::send(Request $request, float $timeout): Response` and throw
-`Tmailor\Http\TransportException::connect()`, `::read()` or `::timeout()` when no HTTP response is received.
+**Transport.** The default `CurlTransport` keeps one curl handle per client so connections are reused, always
+verifies TLS certificates and host names, never follows redirects, allows only HTTPS (and HTTP to a loopback
+host), and never writes a curl debug trace. Extra curl options go to its constructor, for example
+`new CurlTransport([CURLOPT_PROXY => 'http://proxy:3128', CURLOPT_CAINFO => '/path/ca.pem'])`. Only the options
+listed in `CurlTransport::SAFE_OPTIONS` are accepted (proxy, CA bundle, client certificate, DNS and IP resolution,
+network interface, TCP and HTTP version settings); any other option, such as `CURLOPT_SSL_VERIFYPEER` or
+`CURLOPT_VERBOSE`, throws `InvalidArgumentException`. To use another HTTP stack, implement
+`TransportInterface::send(Request $request, float $timeout): Response`: read the request with `$request->method`,
+`$request->url`, `$request->headers()` and `$request->body()`, return `new Response($status, $headers, $body)`, and
+throw `Tmailor\Http\TransportException::connect()`, `::read()` or `::timeout()` when no HTTP response is received.
+The client never copies the message of a `TransportException` into its own errors (only its kind and an optional
+curl error number), so a transport cannot leak a header or a body through it. `Request` and `Response` keep their
+headers and body out of `var_dump()`, `var_export()`, `json_encode()` and `(array)` casts.
 
 ## Addresses
 
@@ -214,12 +222,15 @@ has no local extractor. Always handle `null`.
 ## Account
 
 ```php
-$me = $client->me();        // userId, limits (quotaRemaining, ratePerMin, dailyReqCap, ...), ipAllowlist, subscriptions
+$me = $client->me();        // userId, limits (quotaRemaining, ratePerMin, dailyReqCap, ...), ipAllowlist, ipAllowlistEnforced, subscriptions
 $doms = $client->domains(); // your own domains (iterable, countable) + $doms->sharedDomainsAvailable
 $usage = $client->usage(from: '2026-10-01', to: '2026-10-17');  // daily counters; DateTimeInterface also works
 $client->health();          // public status: no key needed and none is sent
 $client->lastRateLimit();   // RateLimitInfo(limit, remaining, reset) of the last response, or null
 ```
+
+`$me->ipAllowlistEnforced` is `false` when a paid plan lets the key call from any IP address (the allowlist is then
+not checked).
 
 Every model keeps the decoded JSON object in `->raw` (an array), so fields added to the API later are still
 reachable.
@@ -247,7 +258,7 @@ All classes are in the `Tmailor\Exception` namespace.
 | 429 | `RateLimitException`: `RateLimitedException`, `DailyCapReachedException` |
 | 500, other 5xx | `InternalServerException`, unless a more specific error code applies |
 | 503 | `ServiceUnavailableException`: `NoDomainAvailableException`, `IdempotencyUnavailableException`, `CacheUnavailableException` (`->secretChanged`); `InternalServerException` (`InternalError`, reason `cache_hold_failed`); a degraded `health()` (code `HTTP503`) |
-| other 4xx | `ApiException` |
+| 3xx, 1xx, other 4xx | `ApiException` (code `HTTP<status>`). Only 2xx is a success: redirects are never followed, so a 3xx is an error, also for `delete()` and other calls that return nothing |
 | 2xx | `InvalidResponseException` (`InvalidResponse`): body not JSON, a field missing or of the wrong JSON type, or a repeated pagination cursor. The body is never kept in the error |
 | none | `MissingKeyException` (no API key configured), `ApiConnectionException`, `ApiTimeoutException` (no HTTP response) |
 | none | `WaitTimeoutException` (`waitForMessage`) |

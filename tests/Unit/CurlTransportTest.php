@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tmailor\Tests\Unit;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\TestCase;
 use Tmailor\Client;
@@ -97,7 +98,7 @@ final class CurlTransportTest extends TestCase
         self::assertSame('OK', $r->reasonPhrase);
         self::assertSame('rid-echo', $r->header('x-request-id'));
         self::assertSame('120', $r->header('X-RateLimit-Limit'));
-        $echo = json_decode($r->body, true);
+        $echo = json_decode($r->body(), true);
         self::assertIsArray($echo);
         self::assertSame('POST', $echo['method']);
         self::assertSame(['a' => '1', 'b' => 'x y'], $echo['query']);
@@ -108,7 +109,7 @@ final class CurlTransportTest extends TestCase
 
         // The handle is reused: a GET after a POST has no body and no leftover options.
         $r = $t->send(new Request('GET', self::url('/echo'), ['Accept' => 'application/json'], null), 5.0);
-        $echo = json_decode($r->body, true);
+        $echo = json_decode($r->body(), true);
         self::assertIsArray($echo);
         self::assertSame('GET', $echo['method']);
         self::assertSame('', $echo['body']);
@@ -118,7 +119,7 @@ final class CurlTransportTest extends TestCase
     {
         $r = (new CurlTransport())->send(new Request('GET', self::url('/bad-gateway'), [], null), 5.0);
         self::assertSame(502, $r->status);
-        self::assertSame('<html>bad gateway</html>', $r->body);
+        self::assertSame('<html>bad gateway</html>', $r->body());
     }
 
     public function testRedirectIsNotFollowed(): void
@@ -225,9 +226,85 @@ final class CurlTransportTest extends TestCase
         $c->health();
     }
 
-    public function testDebugInfoHidesOptions(): void
+    public function testDumpsHideOptions(): void
     {
         $t = new CurlTransport([\CURLOPT_PROXYUSERPWD => 'user:SUPERSECRET']);
-        self::assertStringNotContainsString('SUPERSECRET', print_r($t, true));
+        ob_start();
+        var_dump($t);
+        $text = print_r($t, true) . var_export($t, true) . json_encode($t) . print_r((array) $t, true) . ob_get_clean();
+        self::assertStringNotContainsString('SUPERSECRET', $text);
+        self::assertStringContainsString('CURLOPT_PROXYUSERPWD', print_r($t, true));
+    }
+
+    /** @return iterable<string, array{int}> */
+    public static function unsafeOptions(): iterable
+    {
+        $names = [
+            'CURLOPT_SSL_VERIFYPEER', 'CURLOPT_SSL_VERIFYHOST', 'CURLOPT_VERBOSE', 'CURLOPT_STDERR',
+            'CURLOPT_FOLLOWLOCATION', 'CURLOPT_PROTOCOLS', 'CURLOPT_REDIR_PROTOCOLS', 'CURLOPT_HEADERFUNCTION',
+            'CURLOPT_WRITEFUNCTION', 'CURLOPT_READFUNCTION', 'CURLOPT_DEBUGFUNCTION', 'CURLOPT_URL',
+            'CURLOPT_HTTPHEADER', 'CURLOPT_POSTFIELDS', 'CURLOPT_PROXY_SSL_VERIFYPEER', 'CURLOPT_SSL_VERIFYSTATUS',
+            'CURLOPT_CERTINFO', 'CURLOPT_FILE', 'CURLOPT_WRITEHEADER', 'CURLOPT_UNRESTRICTED_AUTH',
+        ];
+        foreach ($names as $n) {
+            if (\defined($n)) {
+                yield $n => [\constant($n)];
+            }
+        }
+        yield 'unknown number' => [999999];
+    }
+
+    #[DataProvider('unsafeOptions')]
+    public function testUnsafeOptionsAreRefused(int $opt): void
+    {
+        // Review 20b PHP-01: only the allowlisted options; nothing can turn off TLS checks or print a debug trace.
+        $this->expectException(\InvalidArgumentException::class);
+        new CurlTransport([$opt => true]);
+    }
+
+    public function testSafeOptionsAreAccepted(): void
+    {
+        $t = new CurlTransport([\CURLOPT_CAINFO => '/etc/ssl/certs/ca-bundle.crt', \CURLOPT_IPRESOLVE => \CURL_IPRESOLVE_V4]);
+        $r = $t->send(new Request('GET', self::url('/v1/health'), [], null), 5.0);
+        self::assertSame(200, $r->status);
+        self::assertArrayHasKey(\CURLOPT_PROXY, CurlTransport::allowedOptions());
+        self::assertArrayNotHasKey(\CURLOPT_VERBOSE, CurlTransport::allowedOptions());
+    }
+
+    public function testAllowlistNumbersMatchTheLocalConstants(): void
+    {
+        foreach (CurlTransport::SAFE_OPTIONS as $number => $name) {
+            if (\defined($name)) {
+                self::assertSame($number, \constant($name), $name);
+            }
+        }
+        foreach (['CURLOPT_SSLKEYPASSWD', 'CURLOPT_KEYPASSWD'] as $alias) {
+            if (\defined($alias)) {
+                self::assertArrayHasKey(\constant($alias), CurlTransport::SAFE_OPTIONS, $alias);
+            }
+        }
+    }
+
+    public function testPlainHttpOnlyToLoopback(): void
+    {
+        // Review 20b PHP-01: https only, http only to a loopback host; no request is attempted otherwise.
+        foreach (['http://example.com/v1/health', 'ftp://127.0.0.1/x', 'file:///etc/passwd', 'gopher://127.0.0.1/'] as $url) {
+            try {
+                (new CurlTransport())->send(new Request('GET', $url, [], null), 1.0);
+                self::fail('sent to ' . $url);
+            } catch (\InvalidArgumentException) {
+                self::addToAssertionCount(1);
+            }
+        }
+    }
+
+    public function testCurlErrnoIsKept(): void
+    {
+        try {
+            (new CurlTransport())->send(new Request('GET', 'http://127.0.0.1:' . self::freePort() . '/', [], null), 2.0);
+            self::fail('no TransportException');
+        } catch (TransportException $e) {
+            self::assertSame(7, $e->curlErrno);
+        }
     }
 }

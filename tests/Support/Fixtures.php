@@ -64,6 +64,7 @@ final class Fixtures
                 'rate_per_min' => 30, 'daily_req_cap' => 0, 'max_ip' => 1,
             ],
             'ip_allowlist' => ['203.0.113.10'],
+            'ip_allowlist_enforced' => true,
             'subscriptions' => [['plan' => 'free', 'expires_at' => 0, 'period_end' => 0, 'quota' => 100, 'used' => 0]],
         ];
     }
@@ -124,7 +125,7 @@ final class Fixtures
     /** @return array<array-key, mixed> */
     public static function body(Request $r): array
     {
-        $v = json_decode((string) $r->body, true, 512, \JSON_THROW_ON_ERROR);
+        $v = json_decode((string) $r->body(), true, 512, \JSON_THROW_ON_ERROR);
 
         return is_array($v) ? $v : [];
     }

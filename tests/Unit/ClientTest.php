@@ -74,7 +74,7 @@ final class ClientTest extends TestCase
         F::client($t)->health();
         self::assertNull($t->requests[0]->header('Authorization'));
         self::assertSame('GET', $t->requests[0]->method);
-        self::assertNull($t->requests[0]->body);
+        self::assertNull($t->requests[0]->body());
     }
 
     public function testUserAgentAndHeaders(): void
@@ -238,6 +238,7 @@ final class ClientTest extends TestCase
         self::assertSame(100, $me->subscriptions[0]->quota);
         self::assertSame('abcdefabcdef', $me->key->prefix);
         self::assertSame(['203.0.113.10'], $me->ipAllowlist);
+        self::assertTrue($me->ipAllowlistEnforced);
         self::assertSame(12, $me->raw['user_id']);
     }
 
@@ -388,8 +389,103 @@ final class ClientTest extends TestCase
             self::assertNull($e->getPrevious());
             self::assertNull($e->status);
             self::assertSame('ConnectionError', $e->errorCode);
-            self::assertSame('Network error (boom)', $e->getMessage());
+            self::assertSame('Network error', $e->getMessage());
         }
+    }
+
+    /** @return iterable<string, array{TransportException, class-string<E\ApiConnectionException>, string}> */
+    public static function leakyTransportErrors(): iterable
+    {
+        $leak = 'Authorization: Bearer ' . F::KEY . ' body {"token":"' . F::TOKEN . '"}';
+        yield 'connect' => [TransportException::connect($leak), E\ApiConnectionException::class, 'Connection failed'];
+        yield 'read' => [TransportException::read($leak, 56), E\ApiConnectionException::class, 'Network error (curl error 56)'];
+        yield 'timeout' => [TransportException::timeout($leak, false, 28), E\ApiTimeoutException::class, 'Request timed out (curl error 28)'];
+    }
+
+    /** @param class-string<E\ApiConnectionException> $class */
+    #[DataProvider('leakyTransportErrors')]
+    public function testTransportMessageIsNeverCopied(TransportException $thrown, string $class, string $message): void
+    {
+        // Review 20b PHP-03: a custom transport that writes the request into its exception message.
+        $t = T::sequence([$thrown]);
+        try {
+            F::client($t, maxRetries: 0)->mailbox(F::TOKEN)->delete();
+            self::fail('accepted');
+        } catch (E\ApiConnectionException $e) {
+            self::assertInstanceOf($class, $e);
+            self::assertSame($message, $e->getMessage());
+            $text = (string) $e . $e->summary() . print_r(ConformanceTest::sdkFrames($e), true);
+            foreach (F::SECRETS as $s) {
+                self::assertStringNotContainsString($s, $text);
+            }
+        }
+    }
+
+    /** @return iterable<string, array{int, string}> */
+    public static function nonSuccessStatuses(): iterable
+    {
+        foreach ([301, 302, 303, 304, 307, 308, 100, 101, 0, 199] as $s) {
+            foreach (['delete', 'clear', 'deleteMessage', 'info', 'me'] as $op) {
+                yield "$s $op" => [$s, $op];
+            }
+        }
+    }
+
+    #[DataProvider('nonSuccessStatuses')]
+    public function testOnly2xxIsSuccess(int $status, string $op): void
+    {
+        // Review 20b PHP-04: a redirect (never followed) or an odd status is an error, also for void calls, and is
+        // not retried.
+        $clock = new FakeClock();
+        $t = new T(static fn (): Response => new Response($status, ['Location' => 'https://evil.example/x'], ''));
+        $c = F::client($t, $clock);
+        $box = $c->mailbox(F::TOKEN);
+        try {
+            match ($op) {
+                'delete' => $box->delete(),
+                'clear' => $box->clear(),
+                'deleteMessage' => $box->deleteMessage('m'),
+                'info' => $box->info(),
+                default => $c->me(),
+            };
+            self::fail('treated as a success');
+        } catch (E\ApiException $e) {
+            self::assertSame(E\ApiException::class, $e::class);
+            self::assertSame('HTTP' . $status, $e->errorCode);
+            self::assertSame($status, $e->status);
+        }
+        self::assertCount(1, $t->requests);
+        self::assertSame([], $clock->sleeps);
+    }
+
+    /** @return iterable<string, array{mixed}> */
+    public static function badIpAllowlistEnforced(): iterable
+    {
+        yield 'missing' => [new \stdClass()];
+        yield 'null' => [null];
+        yield 'string' => ['true'];
+        yield 'int' => [1];
+    }
+
+    #[DataProvider('badIpAllowlistEnforced')]
+    public function testIpAllowlistEnforcedIsARequiredBoolean(mixed $value): void
+    {
+        // Review 20b PHP-05
+        $d = json_decode(json_encode(F::me(), \JSON_THROW_ON_ERROR));
+        self::assertInstanceOf(\stdClass::class, $d);
+        if ($value instanceof \stdClass) {
+            unset($d->ip_allowlist_enforced);
+        } else {
+            $d->ip_allowlist_enforced = $value;
+        }
+        try {
+            Me::fromApi($d);
+            self::fail('accepted');
+        } catch (SchemaException $e) {
+            self::assertStringContainsString('ip_allowlist_enforced', $e->getMessage());
+        }
+        $d->ip_allowlist_enforced = false;
+        self::assertFalse(Me::fromApi($d)->ipAllowlistEnforced);
     }
 
     public function testConnectTimeoutIsRetriedForAnyRequest(): void
@@ -415,7 +511,7 @@ final class ClientTest extends TestCase
         ]);
         F::client($t, $clock)->mailboxes->create(domain: 'b.c');
         self::assertCount(3, $t->requests);
-        self::assertSame($t->requests[0]->body, $t->requests[2]->body);
+        self::assertSame($t->requests[0]->body(), $t->requests[2]->body());
         self::assertSame($t->requests[0]->header('Idempotency-Key'), $t->requests[2]->header('Idempotency-Key'));
         self::assertCount(2, $clock->sleeps);
     }

@@ -66,11 +66,11 @@ final class ReplayTransport implements TransportInterface
         }
 
         if (($exp['json'] ?? null) === null) {
-            Assert::assertTrue($request->body === null || $request->body === '', "$where: expected no body");
+            Assert::assertTrue($request->body() === null || $request->body() === '', "$where: expected no body");
         } else {
-            Assert::assertNotNull($request->body, "$where: expected a JSON body");
-            Assert::assertStringStartsWith('{', $request->body, "$where: body must be a JSON object");
-            $got = json_decode($request->body, true, 512, \JSON_THROW_ON_ERROR);
+            Assert::assertNotNull($request->body(), "$where: expected a JSON body");
+            Assert::assertStringStartsWith('{', $request->body(), "$where: body must be a JSON object");
+            $got = json_decode($request->body(), true, 512, \JSON_THROW_ON_ERROR);
             Assert::assertEquals($exp['json'], $got, "$where: body");
             Assert::assertSame(self::canonical($exp['json']), self::canonical($got), "$where: body (types)");
         }

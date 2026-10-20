@@ -122,6 +122,33 @@ final class SecretMaskingTest extends TestCase
         self::assertClean(print_r($resp, true));
     }
 
+    public function testRequestAndResponseHideHeadersAndBody(): void
+    {
+        // Review 20b PHP-02: no public headers/body; every way of dumping them is masked, serialize() is refused.
+        $req = new Request('POST', 'https://x.test/v1/mailbox/info', ['Authorization' => 'Bearer ' . F::KEY], '{"token":"' . F::TOKEN . '"}');
+        $resp = new Response(200, ['X-Request-Id' => 'r'], (string) json_encode(F::mailbox()));
+        foreach ([$req, $resp] as $v) {
+            self::assertClean(self::dump($v) . var_export([$v], true) . json_encode([$v]) . print_r(get_object_vars($v), true));
+            try {
+                serialize($v);
+                self::fail('serialized ' . $v::class);
+            } catch (\LogicException) {
+                self::addToAssertionCount(1);
+            }
+        }
+        self::assertSame('Bearer ' . F::KEY, $req->header('authorization'));
+        self::assertSame(['Authorization' => 'Bearer ' . F::KEY], $req->headers());
+        self::assertSame('{"token":"' . F::TOKEN . '"}', $req->body());
+        self::assertStringContainsString(F::TOKEN, $resp->body());
+        self::assertSame('r', $resp->header('X-REQUEST-ID'));
+        self::assertSame(['x-request-id' => 'r'], $resp->headers());
+        $json = json_decode((string) json_encode($req), true);
+        self::assertIsArray($json);
+        self::assertSame(['Authorization' => '***'], $json['headers']);
+        self::assertSame(['method', 'url'], array_keys(get_object_vars($req)));
+        self::assertSame(['status', 'reasonPhrase'], array_keys(get_object_vars($resp)));
+    }
+
     public function testArgumentErrorsHideTheKeyInTraces(): void
     {
         // The key is cleared from the constructor arguments before the base URL check can throw (PHP 8.1 has no
