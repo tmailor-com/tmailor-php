@@ -99,6 +99,25 @@ final class SecretMaskingTest extends TestCase
         }
     }
 
+    public function testSecretStoreIsReleasedAndIdsAreNotMixedUp(): void
+    {
+        // CI run 39384425331: static store keyed by spl_object_id() (no WeakMap, PHP 8.1 segfault). A freed secret must
+        // drop its entry, so a new object that reuses the id never sees the old value, and the store does not grow.
+        $prop = new \ReflectionProperty(Secret::class, 'values');
+        $before = \count((array) $prop->getValue());
+        for ($i = 0; $i < 2000; ++$i) {
+            $a = Secret::of('value-' . $i);
+            self::assertSame('value-' . $i, $a->reveal());
+            unset($a);
+        }
+        self::assertSame($before, \count((array) $prop->getValue()));
+        $x = Secret::of('first');
+        $id = spl_object_id($x);
+        unset($x);
+        $y = Secret::of('second');
+        self::assertSame('second', $y->reveal(), 'id ' . $id . ' reused without the old value');
+    }
+
     public function testSecretIsNotAProperty(): void
     {
         $s = Secret::of(F::TOKEN);
