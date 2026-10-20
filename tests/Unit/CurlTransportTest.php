@@ -247,8 +247,10 @@ final class CurlTransportTest extends TestCase
             'CURLOPT_CERTINFO', 'CURLOPT_FILE', 'CURLOPT_WRITEHEADER', 'CURLOPT_UNRESTRICTED_AUTH',
         ];
         foreach ($names as $n) {
-            if (\defined($n)) {
-                yield $n => [\constant($n)];
+            // constant() is mixed for PHPStan on PHP 8.1-8.3 stubs: narrow to int (CI run 39384177270).
+            $v = \defined($n) ? \constant($n) : null;
+            if (\is_int($v)) {
+                yield $n => [$v];
             }
         }
         yield 'unknown number' => [999999];
