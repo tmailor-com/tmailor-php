@@ -15,12 +15,8 @@ namespace Tmailor\Internal;
  */
 final class Sealed implements \JsonSerializable
 {
-    // Not a WeakMap: PHP 8.1 segfaults when an object keyed in a static WeakMap is freed while an exception unwinds
-    // the stack (CI run 39384425331, PHP 8.1.34, crash at `throw` in Requester). A static array keyed by
-    // spl_object_id() is equally invisible to var_dump()/print_r()/var_export()/(array); __destruct() drops the entry
-    // before the id can be reused, and cloning is refused.
-    /** @var array<int, mixed> */
-    private static array $values = [];
+    /** @var \WeakMap<Sealed<mixed>, mixed>|null */
+    private static ?\WeakMap $values = null;
 
     private function __construct()
     {
@@ -37,7 +33,7 @@ final class Sealed implements \JsonSerializable
     {
         /** @var self<V> $s */
         $s = new self();
-        self::$values[spl_object_id($s)] = $value;
+        self::map()[$s] = $value;
 
         return $s;
     }
@@ -46,14 +42,19 @@ final class Sealed implements \JsonSerializable
     public function value(): mixed
     {
         /** @var T */
-        return self::$values[spl_object_id($this)] ?? null;
+        return self::map()[$this] ?? null;
     }
 
-
-    /** @return array<string, string> */
-    public function __destruct()
+    /** @return \WeakMap<Sealed<mixed>, mixed> */
+    private static function map(): \WeakMap
     {
-        unset(self::$values[spl_object_id($this)]);
+        if (self::$values === null) {
+            /** @var \WeakMap<Sealed<mixed>, mixed> $m */
+            $m = new \WeakMap();
+            self::$values = $m;
+        }
+
+        return self::$values;
     }
 
     /** @return array<string, string> */
