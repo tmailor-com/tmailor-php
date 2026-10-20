@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="vendor/autoload.php"
+         colors="true"
+         defaultTestSuite="unit"
+         failOnWarning="true"
+         failOnRisky="true"
+         cacheDirectory=".phpunit.cache">
+    <testsuites>
+        <!-- Offline: unit tests, local loopback HTTP tests and the shared conformance scenarios. -->
+        <testsuite name="unit">
+            <directory>tests/Unit</directory>
+            <directory>tests/Conformance</directory>
+        </testsuite>
+        <!-- Real API, opt-in: TMAILOR_API_KEY=... vendor/bin/phpunit with the option testsuite=live -->
+        <testsuite name="live">
+            <directory>tests/Live</directory>
+        </testsuite>
+    </testsuites>
+    <php>
+        <!-- Stack traces with arguments: the secret-masking tests must hold even then. -->
+        <ini name="zend.exception_ignore_args" value="0"/>
+        <ini name="error_reporting" value="-1"/>
+    </php>
+</phpunit>
