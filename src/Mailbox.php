@@ -86,7 +86,7 @@ final class Mailbox implements \JsonSerializable
      */
     public function info(): self
     {
-        $this->setFields($this->requester->call(Ops::mailboxInfo($this->token), MailboxFields::fromApi(...)));
+        $this->setFields($this->requester->call(Ops::mailboxInfo($this->token), static fn(mixed $d): MailboxFields => MailboxFields::fromApi($d)));
 
         return $this;
     }
@@ -102,7 +102,7 @@ final class Mailbox implements \JsonSerializable
     ): MessagePage {
         $spec = Ops::mailboxMessages($this->token, $unread, $from, $subject, $since, $pageSize, $cursor);
 
-        return $this->requester->call($spec, MessagePage::fromApi(...));
+        return $this->requester->call($spec, static fn(mixed $d): MessagePage => MessagePage::fromApi($d));
     }
 
     /**
@@ -150,7 +150,7 @@ final class Mailbox implements \JsonSerializable
      */
     public function message(string|Message $messageId): Message
     {
-        return $this->requester->call(Ops::mailboxMessage($this->token, self::id($messageId)), Message::fromApiWithBody(...));
+        return $this->requester->call(Ops::mailboxMessage($this->token, self::id($messageId)), static fn(mixed $d): Message => Message::fromApiWithBody($d));
     }
 
     public function deleteMessage(string|Message $messageId): void
@@ -230,7 +230,7 @@ final class Mailbox implements \JsonSerializable
             if ($first !== null) {
                 $spec = Ops::mailboxMessage($this->token, $first->id);
 
-                return $this->requester->call($spec, Message::fromApiWithBody(...), $plan->deadline);
+                return $this->requester->call($spec, static fn(mixed $d): Message => Message::fromApiWithBody($d), $plan->deadline);
             }
             $delay = $plan->nextDelay($clock->monotonic(), $clock->wall(), $this->requester->lastRateLimit);
             if ($delay === null) {
@@ -252,7 +252,7 @@ final class Mailbox implements \JsonSerializable
             try {
                 $spec = Ops::mailboxMessages($this->token, null, $from, $subject, $since, 100, $cursor);
 
-                return $this->requester->call($spec, MessagePage::fromApi(...), $plan->deadline, false);
+                return $this->requester->call($spec, static fn(mixed $d): MessagePage => MessagePage::fromApi($d), $plan->deadline, false);
             } catch (RateLimitedException $e) {
                 $retryAfter = $e->retryAfter;
             }

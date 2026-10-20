@@ -99,25 +99,25 @@ final class Client implements \JsonSerializable
     /** `GET /v1/health` (public: no key needed, none is sent). A degraded service throws ServiceUnavailableException (code HTTP503). */
     public function health(): Health
     {
-        return $this->requester->call(Ops::health(), Health::fromApi(...));
+        return $this->requester->call(Ops::health(), static fn(mixed $d): Health => Health::fromApi($d));
     }
 
     /** `GET /v1/me`: account, key prefix, limits, IP allowlist and plans. */
     public function me(): Me
     {
-        return $this->requester->call(Ops::me(), Me::fromApi(...));
+        return $this->requester->call(Ops::me(), static fn(mixed $d): Me => Me::fromApi($d));
     }
 
     /** `GET /v1/domains`: your own domains and whether shared domains are available. */
     public function domains(): DomainList
     {
-        return $this->requester->call(Ops::domains(), DomainList::fromApi(...));
+        return $this->requester->call(Ops::domains(), static fn(mixed $d): DomainList => DomainList::fromApi($d));
     }
 
     /** `GET /v1/usage`: daily counters. Dates are DateTimeInterface or 'YYYY-MM-DD' strings. */
     public function usage(\DateTimeInterface|string|null $from = null, \DateTimeInterface|string|null $to = null): Usage
     {
-        return $this->requester->call(Ops::usage($from, $to), Usage::fromApi(...));
+        return $this->requester->call(Ops::usage($from, $to), static fn(mixed $d): Usage => Usage::fromApi($d));
     }
 
     /** A Mailbox for a token you stored earlier. No request is made; call `info()` to load its fields. */

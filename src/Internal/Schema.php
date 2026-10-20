@@ -155,7 +155,7 @@ final class Schema
             return self::toArray($v);
         }
         if (is_array($v)) {
-            return array_map(self::plain(...), $v);
+            return array_map(static fn(mixed $d): mixed => self::plain($d), $v);
         }
 
         return $v;

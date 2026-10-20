@@ -39,6 +39,9 @@ final class Requester
         return $this->apiKey;
     }
 
+    // $parse is always a `static fn (mixed $d): T => X::fromApi($d)` closure, never the first-class callable
+    // `X::fromApi(...)`: PHP 8.1 segfaults (exit 139) when such a callable is freed while an exception unwinds the
+    // stack (create() then a 404 on info(); found on CI, PHP 8.1.34). tests/Unit/PackageTest guards it.
     /**
      * @template T
      *

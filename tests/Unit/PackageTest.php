@@ -32,4 +32,28 @@ final class PackageTest extends TestCase
         self::assertArrayNotHasKey('version', $c, 'Packagist takes the version from the git tag');
         self::assertSame(['php' => '>=8.1', 'ext-curl' => '*', 'ext-json' => '*'], $c['require']);
     }
+
+    public function testNoFirstClassCallableSyntaxInSrc(): void
+    {
+        // PHP 8.1 segfaults when a `X::method(...)` callable is freed during exception unwinding (CI, PHP 8.1.34):
+        // src/ passes `static fn` closures instead. Comments are skipped; `...` alone (variadics, spread) is fine.
+        $banned = [];
+        $files = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator(\dirname(__DIR__, 2) . '/src'));
+        foreach ($files as $f) {
+            if (!$f instanceof \SplFileInfo || $f->getExtension() !== 'php') {
+                continue;
+            }
+            $code = [];
+            foreach (token_get_all((string) file_get_contents($f->getPathname())) as $t) {
+                if (\is_array($t) && \in_array($t[0], [\T_COMMENT, \T_DOC_COMMENT, \T_WHITESPACE], true)) {
+                    continue;
+                }
+                $code[] = \is_array($t) ? $t[1] : $t;
+            }
+            if (str_contains(implode('', $code), '(...)')) {
+                $banned[] = $f->getFilename();
+            }
+        }
+        self::assertSame([], $banned, 'first-class callable syntax in src/');
+    }
 }

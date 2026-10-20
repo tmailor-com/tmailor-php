@@ -31,7 +31,7 @@ final class Mailboxes implements \IteratorAggregate
      */
     public function create(?string $domain = null, ?string $name = null, ?string $idempotencyKey = null): Mailbox
     {
-        $f = $this->requester->call(Ops::mailboxesCreate($domain, $name, $idempotencyKey), MailboxFields::fromApi(...));
+        $f = $this->requester->call(Ops::mailboxesCreate($domain, $name, $idempotencyKey), static fn(mixed $d): MailboxFields => MailboxFields::fromApi($d));
 
         return Mailbox::fromFields($this->requester, $f);
     }
@@ -39,7 +39,7 @@ final class Mailboxes implements \IteratorAggregate
     /** One page of addresses (newest first) with `nextCursor`. */
     public function listPage(?string $cursor = null, ?int $pageSize = null): MailboxPage
     {
-        [$fields, $next] = $this->requester->call(Ops::mailboxesList($cursor, $pageSize), self::parsePage(...));
+        [$fields, $next] = $this->requester->call(Ops::mailboxesList($cursor, $pageSize), static fn(mixed $d): mixed => self::parsePage($d));
         $items = [];
         foreach ($fields as $f) {
             $items[] = Mailbox::fromFields($this->requester, $f);
